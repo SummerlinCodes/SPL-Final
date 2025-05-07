@@ -1,76 +1,84 @@
 # How to Use JunoStack — AI Programming Assistant Language
 
-This guide walks you through how to use JunoStack, a language designed for building and working with multiple AI models like local LLMs using Ollama.
+JunoStack is a language for building tools with AI assistance. You can route prompts to specific AI models using intuitive declarations.
 
 ---
 
-## 🧾 Key Concepts
+## Core Concepts
 
-### 1. Declare Your API Server
+### 1. Declare API Keys
 ```t
 apikey ollama = "http://localhost:11434";
 ```
 
-This tells JunoStack where to send model requests.
+This tells JunoStack where to route `callMode(...)` requests (i.e., your Ollama server).
 
 ---
 
 ### 2. Assign Models to Modes
 ```t
-mode coder = "qwen3";
+mode coder = "qwen_4b";
 ```
 
-This links a logical role to a model (used with Ollama).
+You can use friendly model aliases — these will be mapped to real Ollama model names under the hood.
 
 ---
 
-### 3. Define Mode Instructions
+### 3. Set Mode Instructions
 ```t
-modeInstructions = "write code according to blueprint";
+modeInstructions["coder"] = "write code following blueprint";
 ```
 
-This is tied to the most recently declared mode.
+These instructions guide how the model behaves when used.
 
 ---
 
-### 4. Group Modes Into Profiles
+### 4. Create Profiles
 ```t
 profile production {
-    blueprint,
     coder,
+    debug,
     manager
 }
 ```
 
-Profiles are collections of modes that define a working context.
+Profiles bundle modes into a named context you can reuse.  (WIP)
 
 ---
 
-### 5. Switch Contexts and Call AI
+### 5. Switch Context & Call AI
 ```t
 currentProfile = "production";
 currentMode = "coder";
-callMode("Build login and registration endpoints");
+callMode("Create a login form with validation.");
 ```
 
 ---
 
-## 🚀 How to Run
+## Supported Aliases
 
-In terminal:
+| Alias         | Actual Model |
+|---------------|--------------|
+| qwen_4b       | qwen3:4b     |
+| gemma_4b      | gemma3:4b    |
+| mistral       | mistral      |
+
+---
+
+## Testing & Running
+
+Run a test file with:
 
 ```bash
-python runner.py test_modes.t
+python runner.py test_modes2.t
+python runner.py test_blueprint.t
+python runner.py test_coder.t
+python runner.py test_debug.t
+python runner.py test_manager.t
 ```
 
-JunoStack will route prompts to your local models based on the current mode and its instructions.
+Edit `test_modes2.t` to try new prompts, mode setups, or model ideas.
 
----
+If it breaks — just yell for Brandon 😄
 
-## Want to Try More?
-
-Edit `test_modes.t` to create your own profiles, modes, and instruction flows!
-
-If anything breaks or you get confused, text Brandon.
-
-You've got this 💡
+You've got this 

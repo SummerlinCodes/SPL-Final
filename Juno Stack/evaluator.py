@@ -5,12 +5,6 @@ import json
 import copy
 import requests
 
-
-import sys
-
-# Global debug toggle — matches runner.py behavior
-DEBUG_MODE = "--debug" in sys.argv
-
 def type_of(*args):
     def single_type(x):
         if isinstance(x, bool):
@@ -103,8 +97,7 @@ def ast_to_string(ast):
     #!------ New feature implemented: modeInstructions + profile routing ------!
     if ast["tag"] == "call":
         if ast["function"]["value"] == "callMode":
-            if DEBUG_MODE:
-                print("[DEBUG] callMode triggered")  # Debugging line
+            print("[DEBUG] callMode triggered")  # Debugging line
             prompt, _ = evaluate(ast["arguments"][0], environment)
             current_mode = environment.get("currentMode")
         
@@ -138,8 +131,7 @@ def ast_to_string(ast):
         composed_prompt = prepend + prompt
 
         print(f"[callMode] Mode '{current_mode}' using key '{selected_api}': {composed_prompt}")
-        response_text = f"SIMULATED({selected_api}) >\n{mode_instructions}\n{composed_prompt}"
-        return response_text, None
+        return f"SIMULATED({selected_api}): {composed_prompt}", None
     
 
         # Regular function call logic
@@ -399,16 +391,12 @@ def evaluate(ast, environment):
 
         return value, exit_status
 
-
-
     if ast["tag"] == "function":
         return ast, False
 
-    #!------ New feature implemented: callMode dispatch with Ollama API ------!
     if ast["tag"] == "call":
         if ast["function"]["value"] == "callMode":
-            if DEBUG_MODE:
-                print("[DEBUG] callMode has been invoked")  # Debugging line
+            print("[DEBUG] callMode has been invoked")  # Debugging line
             prompt, _ = evaluate(ast["arguments"][0], environment)
             current_mode = environment.get("currentMode")
             if not current_mode:
@@ -437,14 +425,21 @@ def evaluate(ast, environment):
             composed_prompt = (instructions + "\n\n" if instructions else "") + prompt
 
             try:
-            #!------ New feature implemented: Streaming response support from Ollama ------!
+                # Map friendly aliases to actual Ollama model names
+                MODEL_NAME_MAP = {
+                    "qwen_4b": "qwen3:4b",
+                    "gemma_4b": "gemma3:4b",
+                    "mistral_small": "mistral",
+                }
+
+                model_name = MODEL_NAME_MAP.get(selected_api, selected_api)
+
                 response = requests.post(f"{api_map[selected_api]}/api/generate", json={
-                    "model": selected_api,
+                    "model": model_name,
                     "prompt": composed_prompt,
                     "stream": True
                 }, stream=True)
-                if DEBUG_MODE:
-                    print("[DEBUG] Streaming response started")
+                print("[DEBUG] Streaming response started")
 
                 if not response.ok:
                     return f"[Ollama API Error] {response.status_code}: {response.text}", None
@@ -452,20 +447,19 @@ def evaluate(ast, environment):
                 output = ""
                 for line in response.iter_lines():
                     if line:
-                        # ------- DEBUG: print(f"[DEBUG] Got Chunk: {line}") ------
+                        # ----- Debug:print(f"[DEBUG] Got Chunk: {line}") ------
                         try:
                             chunk = json.loads(line.decode("utf-8"))
                             output += chunk.get("response", "")
                         except Exception as e:
                             output += f"\n[Chunk parse error: {str(e)}]"
-                # -------- Debug: print(f"[DEBUG] callMode returning full output") ------        
+                print(f"[DEBUG] callMode returning full output")            
                 return output, None
 
             except Exception as e:
                 return f"[Ollama Streaming Error] {str(e)}", None
 
-
-        # ------ Regular function call logic ------
+        # Regular function call logic
         function, _ = evaluate(ast["function"], environment)
         argument_values = [evaluate(arg, environment)[0] for arg in ast["arguments"]]
         if function.get("tag") == "builtin":
@@ -476,8 +470,6 @@ def evaluate(ast, environment):
         }
         local_environment["$parent"] = environment
         return evaluate(function["body"], local_environment)
-
-
 
     if ast["tag"] == "complex":
         base, _ = evaluate(ast["base"], environment)
@@ -494,13 +486,11 @@ def evaluate(ast, environment):
             return base[index], False
         assert False, f"Unknown index type [{index}]"
 
-    if "tag" not in ast["target"]:
-        raise Exception(f"[assign] Target is malformed: {ast['target']}")
-
-    #!------ New feature implemented: Assignment with API key and mode ------
     if ast["tag"] == "assign":
-        if DEBUG_MODE:
-            print("[DEBUG] Assigning:", ast["target"])
+        print("[DEBUG] Assigning:", ast["target"])
+        if "tag" not in ast["target"]:
+            raise Exception(f"[assign] Target is malformed: {ast['target']}")
+            
         target = ast["target"]
         value, _ = evaluate(ast["value"], environment)
 
