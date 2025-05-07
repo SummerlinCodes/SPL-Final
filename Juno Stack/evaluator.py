@@ -5,6 +5,12 @@ import json
 import copy
 import requests
 
+
+import sys
+
+# Global debug toggle — matches runner.py behavior
+DEBUG_MODE = "--debug" in sys.argv
+
 def type_of(*args):
     def single_type(x):
         if isinstance(x, bool):
@@ -97,7 +103,8 @@ def ast_to_string(ast):
     #!------ New feature implemented: modeInstructions + profile routing ------!
     if ast["tag"] == "call":
         if ast["function"]["value"] == "callMode":
-            print("[DEBUG] callMode triggered")  # Debugging line
+            if DEBUG_MODE:
+                print("[DEBUG] callMode triggered")  # Debugging line
             prompt, _ = evaluate(ast["arguments"][0], environment)
             current_mode = environment.get("currentMode")
         
@@ -131,7 +138,8 @@ def ast_to_string(ast):
         composed_prompt = prepend + prompt
 
         print(f"[callMode] Mode '{current_mode}' using key '{selected_api}': {composed_prompt}")
-        return f"SIMULATED({selected_api}): {composed_prompt}", None
+        response_text = f"SIMULATED({selected_api}) >\n{mode_instructions}\n{composed_prompt}"
+        return response_text, None
     
 
         # Regular function call logic
@@ -399,7 +407,8 @@ def evaluate(ast, environment):
     #!------ New feature implemented: callMode dispatch with Ollama API ------!
     if ast["tag"] == "call":
         if ast["function"]["value"] == "callMode":
-            print("[DEBUG] callMode has been invoked")  # Debugging line
+            if DEBUG_MODE:
+                print("[DEBUG] callMode has been invoked")  # Debugging line
             prompt, _ = evaluate(ast["arguments"][0], environment)
             current_mode = environment.get("currentMode")
             if not current_mode:
@@ -434,7 +443,8 @@ def evaluate(ast, environment):
                     "prompt": composed_prompt,
                     "stream": True
                 }, stream=True)
-                print("[DEBUG] Streaming response started")
+                if DEBUG_MODE:
+                    print("[DEBUG] Streaming response started")
 
                 if not response.ok:
                     return f"[Ollama API Error] {response.status_code}: {response.text}", None
@@ -442,13 +452,13 @@ def evaluate(ast, environment):
                 output = ""
                 for line in response.iter_lines():
                     if line:
-                        print(f"[DEBUG] Got Chunk: {line}")
+                        # ------- DEBUG: print(f"[DEBUG] Got Chunk: {line}") ------
                         try:
                             chunk = json.loads(line.decode("utf-8"))
                             output += chunk.get("response", "")
                         except Exception as e:
                             output += f"\n[Chunk parse error: {str(e)}]"
-                print(f"[DEBUG] callMode returning full output")            
+                # -------- Debug: print(f"[DEBUG] callMode returning full output") ------        
                 return output, None
 
             except Exception as e:
@@ -489,7 +499,8 @@ def evaluate(ast, environment):
 
     #!------ New feature implemented: Assignment with API key and mode ------
     if ast["tag"] == "assign":
-        print("[DEBUG] Assigning:", ast["target"])
+        if DEBUG_MODE:
+            print("[DEBUG] Assigning:", ast["target"])
         target = ast["target"]
         value, _ = evaluate(ast["value"], environment)
 

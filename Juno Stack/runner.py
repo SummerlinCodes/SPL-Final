@@ -2,6 +2,12 @@
 
 import sys
 
+
+import sys
+
+# Toggle debug mode with a --debug flag
+DEBUG_MODE = "--debug" in sys.argv
+
 from tokenizer import tokenize
 
 from parser import parse
@@ -26,7 +32,6 @@ def main():
             tokens = tokenize(source_code)
             ast = parse(tokens)
             result, _ = evaluate(ast, environment)
-            print("[DEBUG] Final evaluation result:", result)
             if result is not None:
                 print(result)
         except Exception as e:
@@ -46,7 +51,6 @@ def main():
                 tokens = tokenize(source_code)
                 ast = parse(tokens)
                 result, _ = evaluate(ast, environment)
-                print("[DEBUG] Final evaluation result:", result)
                 if result is not None:
                     print(result)
             except Exception as e:
@@ -54,4 +58,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
