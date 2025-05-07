@@ -1,7 +1,9 @@
 from tokenizer import tokenize
 from parser import parse
 from pprint import pprint
+import json
 import copy
+import requests
 
 def type_of(*args):
     def single_type(x):
@@ -92,11 +94,51 @@ def ast_to_string(ast):
     if ast["tag"] == "function":
         return str(ast)
 
+    #!------ New feature implemented: modeInstructions + profile routing ------!
     if ast["tag"] == "call":
-        items = []
-        for item in ast["arguments"]:
-            result = ast_to_string(item)
-            items.append(result)
+        if ast["function"]["value"] == "callMode":
+            print("[DEBUG] callMode triggered")  # Debugging line
+            prompt, _ = evaluate(ast["arguments"][0], environment)
+            current_mode = environment.get("currentMode")
+        
+            if not current_mode:
+                raise Exception("No currentMode is set.")
+
+        # Resolve profile
+        current_profile = environment.get("currentProfile")
+        if current_profile and current_mode not in environment.get("__modes__", {}):
+            profile_map = environment.get("__profiles__", {})
+            if current_profile in profile_map:
+                modes_in_profile = profile_map[current_profile]
+                if current_mode not in [m for m in modes_in_profile]:
+                    raise Exception(f"Mode '{current_mode}' not found in currentProfile '{current_profile}'")
+
+        # Get API and mode target
+        mode_map = environment.get("__modes__", {})
+        api_map = environment.get("__api_keys__", {})
+        mode_instr_map = environment.get("__mode_instructions__", {})
+
+        if current_mode not in mode_map:
+            raise Exception(f"Mode '{current_mode}' is not defined.")
+        selected_api = mode_map[current_mode]
+        instructions = mode_instr_map.get(current_mode, "")
+
+        if selected_api not in api_map:
+            raise Exception(f"API key '{selected_api}' is not defined.")
+
+        # Compose instruction + prompt
+        prepend = (instructions + "\n\n" if instructions else "")
+        composed_prompt = prepend + prompt
+
+        print(f"[callMode] Mode '{current_mode}' using key '{selected_api}': {composed_prompt}")
+        return f"SIMULATED({selected_api}): {composed_prompt}", None
+    
+
+        # Regular function call logic
+    items = []
+    for item in ast["arguments"]:
+        result = ast_to_string(item)
+        items.append(result)
         return "(" + ",".join(items) + ")"
 
     if ast["tag"] == "complex":
@@ -329,55 +371,102 @@ def evaluate(ast, environment):
         return value, exit_status
 
     if ast["tag"] == "program":
-        for statement in ast["statements"]:
-            value, exit_status = evaluate(statement, environment)
+        value = None
+        exit_status = None
+        last_statement = ast["statements"][-1] if ast["statements"] else None
+
+        for i, statement in enumerate(ast["statements"]):
+            result, exit_status = evaluate(statement, environment)
+
+            # Only auto-print if it's the last statement AND not already a print or assignment
+            is_last = (i == len(ast["statements"]) - 1)
+            is_auto_printable = statement["tag"] not in ["print", "assign", "return"]
+
+            if is_last and is_auto_printable and result is not None:
+                print("[JunoStack Output]:", result)
+
+            value = result
             if exit_status:
                 return value, exit_status
+
         return value, exit_status
+
+
 
     if ast["tag"] == "function":
         return ast, False
 
-    #!------ New feature implemented: added support for callMode ------
+    #!------ New feature implemented: callMode dispatch with Ollama API ------!
     if ast["tag"] == "call":
         if ast["function"]["value"] == "callMode":
-            #!------ New feature implemented: callMode dispatch ------
+            print("[DEBUG] callMode has been invoked")  # Debugging line
             prompt, _ = evaluate(ast["arguments"][0], environment)
             current_mode = environment.get("currentMode")
             if not current_mode:
                 raise Exception("No currentMode is set.")
-            
+
+            current_profile = environment.get("currentProfile")
+            if current_profile and current_mode not in environment.get("__modes__", {}):
+                profile_map = environment.get("__profiles__", {})
+                if current_profile in profile_map:
+                    modes_in_profile = profile_map[current_profile]
+                    if current_mode not in modes_in_profile:
+                        raise Exception(f"Mode '{current_mode}' not found in currentProfile '{current_profile}'")
+
             mode_map = environment.get("__modes__", {})
             api_map = environment.get("__api_keys__", {})
+            mode_instr_map = environment.get("__mode_instructions__", {})
 
             if current_mode not in mode_map:
                 raise Exception(f"Mode '{current_mode}' is not defined.")
-            
             selected_api = mode_map[current_mode]
+            instructions = mode_instr_map.get(current_mode, "")
+
             if selected_api not in api_map:
                 raise Exception(f"API key '{selected_api}' is not defined.")
 
-            print(f"[callMode] Mode '{current_mode}' using key '{selected_api}': {prompt}")
-            return f"SIMULATED({selected_api}): {prompt}", None
+            composed_prompt = (instructions + "\n\n" if instructions else "") + prompt
 
-        # Regular function call logic
+            try:
+            #!------ New feature implemented: Streaming response support from Ollama ------!
+                response = requests.post(f"{api_map[selected_api]}/api/generate", json={
+                    "model": selected_api,
+                    "prompt": composed_prompt,
+                    "stream": True
+                }, stream=True)
+                print("[DEBUG] Streaming response started")
+
+                if not response.ok:
+                    return f"[Ollama API Error] {response.status_code}: {response.text}", None
+
+                output = ""
+                for line in response.iter_lines():
+                    if line:
+                        print(f"[DEBUG] Got Chunk: {line}")
+                        try:
+                            chunk = json.loads(line.decode("utf-8"))
+                            output += chunk.get("response", "")
+                        except Exception as e:
+                            output += f"\n[Chunk parse error: {str(e)}]"
+                print(f"[DEBUG] callMode returning full output")            
+                return output, None
+
+            except Exception as e:
+                return f"[Ollama Streaming Error] {str(e)}", None
+
+
+        # ------ Regular function call logic ------
         function, _ = evaluate(ast["function"], environment)
         argument_values = [evaluate(arg, environment)[0] for arg in ast["arguments"]]
-
         if function.get("tag") == "builtin":
             return evaluate_builtin_function(function["name"], argument_values)
-
-        # Function call into user-defined function
         local_environment = {
             name["value"]: val
             for name, val in zip(function["parameters"], argument_values)
         }
         local_environment["$parent"] = environment
-        value, exit_status = evaluate(function["body"], local_environment)
-        if exit_status:
-            return value, False
-        else:
-            return None, False
+        return evaluate(function["body"], local_environment)
+
 
 
     if ast["tag"] == "complex":
@@ -395,8 +484,12 @@ def evaluate(ast, environment):
             return base[index], False
         assert False, f"Unknown index type [{index}]"
 
+    if "tag" not in ast["target"]:
+        raise Exception(f"[assign] Target is malformed: {ast['target']}")
+
     #!------ New feature implemented: Assignment with API key and mode ------
     if ast["tag"] == "assign":
+        print("[DEBUG] Assigning:", ast["target"])
         target = ast["target"]
         value, _ = evaluate(ast["value"], environment)
 
@@ -416,6 +509,16 @@ def evaluate(ast, environment):
         if target["tag"] == "identifier":
             environment[target["value"]] = value
             return value, None
+        
+        #!----- New Feature Implemented: Handle modeInstructions["xyz"] = "..." and assignments to modeInstructions["xyz"] -----
+        if target["tag"] == "complex" and target["base"]["tag"] == "identifier" and target["base"]["value"] == "modeInstructions":
+            index_ast = target["index"]
+            if index_ast["tag"] != "string":
+                raise Exception("modeInstructions index must be a string")
+            mode_name = index_ast["value"]
+            environment.setdefault("__mode_instructions__", {})[mode_name] = value
+            return value, None
+
         elif target["tag"] == "complex":
             base, _ = evaluate(target["base"], environment)
             index_ast = target["index"]

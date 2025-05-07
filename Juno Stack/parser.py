@@ -6,6 +6,7 @@ from pprint import pprint
 # Special case parsing for `apikey <name> = "<key>"`, `mode <name> = "<key>"`, and callMode("...")
 
 def parse_special_keywords(tokens):
+    global last_mode
     if tokens[0]["tag"] == "apikey":
         assert tokens[1]["tag"] == "identifier", "Expected identifier after 'apikey'"
         assert tokens[2]["tag"] == "=", "Expected '=' after apikey name"
@@ -13,12 +14,41 @@ def parse_special_keywords(tokens):
         value, remaining = parse_expression(tokens[3:])
         return {"tag": "assign", "target": target, "value": value}, remaining
 
+    #!------ New feature implemented: Mode Support ------!
     if tokens[0]["tag"] == "mode":
         assert tokens[1]["tag"] == "identifier", "Expected identifier after 'mode'"
         assert tokens[2]["tag"] == "=", "Expected '=' after mode name"
         target = {"tag": "identifier", "value": "mode " + tokens[1]["value"]}
         value, remaining = parse_expression(tokens[3:])
         return {"tag": "assign", "target": target, "value": value}, remaining
+
+    
+    #!------ New feature implemented: ModeInstructions Support ------!
+    if tokens[0]["tag"] == "modeInstructions" and tokens[1]["tag"] == "=":
+        assert tokens[2]["tag"] == "string", "Expected string after '=' for modeInstructions"
+        instruction = tokens[2]
+        assert 'last_mode' in globals(), "modeInstructions must follow a mode declaration"
+        target = {"tag": "complex", "base": {"tag": "identifier", "value": "__mode_instructions__"}, "index": {"tag": "string", "value": last_mode}}
+        value = {"tag": "string", "value": instruction["value"]}
+        return {"tag": "assign", "target": target, "value": value}, tokens[3:]
+
+    #!------ New feature implemented: Profile Block Support ------!
+    if tokens[0]["tag"] == "profile":
+        assert tokens[1]["tag"] == "identifier", "Expected profile name after 'profile'"
+        profile_name = tokens[1]["value"]
+        assert tokens[2]["tag"] == "{", "Expected '{' after profile name"
+        modes = []
+        tokens = tokens[3:]
+        while tokens[0]["tag"] != "}":
+            assert tokens[0]["tag"] == "identifier", "Expected mode name in profile block"
+            modes.append({"tag": "string", "value": tokens[0]["value"]})
+            tokens = tokens[1:]
+            if tokens[0]["tag"] == ",":
+                tokens = tokens[1:]
+        assert tokens[0]["tag"] == "}", "Expected '}' to close profile block"
+        target = {"tag": "complex", "base": {"tag": "identifier", "value": "__profiles__"}, "index": {"tag": "string", "value": profile_name}}
+        value = {"tag": "list", "items": modes}
+        return {"tag": "assign", "target": target, "value": value}, tokens[1:] if tokens[0]["tag"] == ";" else tokens
 
     if tokens[0]["tag"] == "callMode":
         assert tokens[1]["tag"] == "(", "Expected '(' after callMode"

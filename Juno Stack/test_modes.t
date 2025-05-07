@@ -3,21 +3,17 @@
 
 apikey ollama = "http://localhost:11434";
 
-mode debug = "gemma 3";
-modeInstructions = "debug and explain what was wrong, and the corrections made"
+mode debug = "gemma3";
+modeInstructions = "debug and explain what was wrong, and the corrections made";
 
 mode blueprint = "mistral";
 modeInstructions = "create a blueprint for a new feature based on the user's request";
 
-mode coder = "qwen 3"
+mode coder = "qwen3";
 modeInstructions = "generate code according to the blueprint created";
 
-mode manager = "qwen 3"
+mode manager = "qwen3";
 modeInstructions = "manage the project and ensure all tasks are on track, and the blueprints are followed";
-
-callMode("Generate test cases for a string reversal function");
-
-profile1 = "production";
 
 profile production {
     blueprint,
@@ -25,8 +21,13 @@ profile production {
     manager
 }
 
-profile2 = "maintenance";
-
 profile maintenance {
-    debug,
+    debug
 }
+
+currentProfile = "production";
+currentMode = "coder";
+
+print "Starting callMode..."
+callMode("say hi")
+print "Finished callMode..."
